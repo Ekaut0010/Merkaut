@@ -1,7 +1,9 @@
 from fastapi.testclient import TestClient
 from uuid import uuid4
 from main import app
-
+from datetime import datetime, timedelta, timezone
+import jwt
+from app.config import SECRET_KEY, ALGORITHM
 
 client = TestClient(app)
 
@@ -189,4 +191,167 @@ def test_bloquear_alteracao_e_exclusao_de_outro_mercado():
         headers={"Authorization": f"Bearer {token_b}"}
     )
     assert exclusao.status_code == 404
-    
+
+def test_atualizar_e_excluir_produto_proprio():
+    email = f"{uuid4().hex}@merkaut.com"
+    senha = "SenhaTeste123"
+
+    # Criar mercado
+    cadastro = client.post(
+        "/mercados/",
+        json={
+            "nome": "Mercado CRUD",
+            "email": email,
+            "senha": senha
+        }
+    )
+
+    assert cadastro.status_code == 201
+
+    # Fazer login
+    login = client.post(
+        "/login",
+        data={
+            "username": email,
+            "password": senha
+        }
+    )
+
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Cadastrar produto
+    produto = client.post(
+        "/produtos/",
+        headers=headers,
+        json={
+            "nome": "Arroz",
+            "preco": 25.90,
+            "codigo_de_barras": "123456789"
+        }
+    )
+
+    assert produto.status_code == 201
+
+    produto_id = produto.json()["id"]
+
+    # Atualizar produto
+    atualizacao = client.put(
+        f"/produtos/{produto_id}",
+        headers=headers,
+        json={
+            "nome": "Arroz Integral",
+            "preco": 29.90,
+            "codigo_de_barras": "123456789"
+        }
+    )
+
+    assert atualizacao.status_code == 200
+
+    # Confirmar atualização
+    consulta = client.get(
+        "/produtos/",
+        headers=headers
+    )
+
+    assert consulta.status_code == 200
+    assert any(
+        p["id"] == produto_id and p["nome"] == "Arroz Integral"
+        for p in consulta.json()
+    )
+
+    # Excluir produto
+    exclusao = client.delete(
+        f"/produtos/{produto_id}",
+        headers=headers
+    )
+
+    assert exclusao.status_code == 200
+
+def test_bloquear_acesso_sem_token():
+    # Tentar listar produtos sem autenticação
+    response = client.get("/produtos/")
+
+    assert response.status_code == 401
+
+    # Tentar cadastrar produto sem autenticação
+    response = client.post(
+        "/produtos/",
+        json={
+            "nome": "Produto Não Autorizado",
+            "preco": 10.00,
+            "codigo_de_barras": "111222333"
+        }
+    )
+
+    assert response.status_code == 401
+
+def test_bloquear_token_invalido():
+    headers = {
+        "Authorization": "Bearer token_inventado_123"
+    }
+
+    response = client.get(
+        "/produtos/",
+        headers=headers
+    )
+
+    assert response.status_code == 401
+    from datetime import datetime, timedelta, timezone
+import jwt
+from app.config import SECRET_KEY, ALGORITHM
+
+
+def test_bloquear_token_expirado():
+    token_expirado = jwt.encode(
+        {
+            "sub": "1",
+            "nome": "Mercado Teste",
+            "exp": datetime.now(timezone.utc) - timedelta(minutes=1)
+        },
+        SECRET_KEY,
+        algorithm=ALGORITHM
+    )
+
+    headers = {
+        "Authorization": f"Bearer {token_expirado}"
+    }
+
+    response = client.get(
+        "/produtos/",
+        headers=headers
+    )
+
+    assert response.status_code == 401
+
+def test_bloquear_produto_com_dados_invalidos():
+    email = f"{uuid4().hex}@merkaut.com"
+    senha = "SenhaTeste123"
+
+    cadastro = client.post(
+        "/mercados/",
+        json={
+            "nome": "Mercado Validacao",
+            "email": email,
+            "senha": senha
+        }
+    )
+    assert cadastro.status_code == 201
+
+    login = client.post(
+        "/login",
+        data={"username": email, "password": senha}
+    )
+    token = login.json()["access_token"]
+
+    response = client.post(
+        "/produtos/",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "nome": "A",
+            "preco": -10,
+            "codigo_de_barras": ""
+        }
+    )
+
+    assert response.status_code == 422
