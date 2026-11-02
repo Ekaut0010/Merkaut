@@ -136,3 +136,60 @@ def listar_produtos_do_mercado(mercado_id: int):
     finally:
         cursor.close()
         conn.close()
+
+# 7. Molde para edição (não incluímos o mercado_id no molde de atualização 
+#    para garantir que um produto nunca mude de dono acidentalmente)
+class ProdutoUpdate(BaseModel):
+    nome: str
+    preco: float
+    codigo_de_barras: str
+
+# 8. Rota PUT para Editar um produto existente
+@app.put("/produtos/{produto_id}")
+def atualizar_produto(produto_id: int, produto: ProdutoUpdate):
+    conn = get_conexao()
+    cursor = conn.cursor()
+    try:
+        # A cláusula WHERE id = %s é vital aqui para não alterar todos os produtos do banco de uma vez!
+        cursor.execute(
+            """
+            UPDATE Produtos 
+            SET nome = %s, preco = %s, codigo_de_barras = %s 
+            WHERE id = %s RETURNING id, nome;
+            """,
+            (produto.nome, produto.preco, produto.codigo_de_barras, produto_id)
+        )
+        produto_atualizado = cursor.fetchone()
+        conn.commit()
+
+        if produto_atualizado is None:
+            return {"erro": "Produto não encontrado."}
+
+        return {"mensagem": f"Produto '{produto_atualizado[1]}' atualizado com sucesso!"}
+    except Exception as e:
+        conn.rollback()
+        return {"erro": f"Falha ao atualizar produto: {e}"}
+    finally:
+        cursor.close()
+        conn.close()
+
+# 9. Rota DELETE para Apagar um produto
+@app.delete("/produtos/{produto_id}")
+def deletar_produto(produto_id: int):
+    conn = get_conexao()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM Produtos WHERE id = %s RETURNING id;", (produto_id,))
+        produto_deletado = cursor.fetchone()
+        conn.commit()
+
+        if produto_deletado is None:
+            return {"erro": "Produto não encontrado."}
+
+        return {"mensagem": "Produto excluído definitivamente do estoque."}
+    except Exception as e:
+        conn.rollback()
+        return {"erro": f"Falha ao deletar produto: {e}"}
+    finally:
+        cursor.close()
+        conn.close()
