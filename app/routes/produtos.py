@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, HTTPException, Depends
 
 from app.database import get_conexao
@@ -16,14 +17,14 @@ router = APIRouter(
 def listar_produtos(
     mercado_id: int = Depends(obter_mercado_atual)
 ):
-
     conn = get_conexao()
     cursor = conn.cursor()
 
     try:
         cursor.execute(
             """
-            SELECT id, nome, preco, codigo_de_barras
+            SELECT id, nome, preco, codigo_de_barras,
+                   quantidade_estoque, estoque_minimo
             FROM Produtos
             WHERE mercado_id = %s;
             """,
@@ -37,7 +38,9 @@ def listar_produtos(
                 "id": p[0],
                 "nome": p[1],
                 "preco": p[2],
-                "codigo_de_barras": p[3]
+                "codigo_de_barras": p[3],
+                "quantidade_estoque": p[4],
+                "estoque_minimo": p[5]
             }
             for p in produtos
         ]
@@ -53,7 +56,6 @@ def criar_produto(
     produto: ProdutoCreate,
     mercado_id: int = Depends(obter_mercado_atual)
 ):
-
     conn = get_conexao()
     cursor = conn.cursor()
 
@@ -61,15 +63,18 @@ def criar_produto(
         cursor.execute(
             """
             INSERT INTO Produtos
-            (nome, preco, codigo_de_barras, mercado_id)
-            VALUES (%s, %s, %s, %s)
+            (nome, preco, codigo_de_barras, mercado_id,
+             quantidade_estoque, estoque_minimo)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id, nome;
             """,
             (
                 produto.nome,
                 produto.preco,
                 produto.codigo_de_barras,
-                mercado_id
+                mercado_id,
+                produto.quantidade_estoque,
+                produto.estoque_minimo
             )
         )
 
@@ -101,7 +106,6 @@ def atualizar_produto(
     produto: ProdutoUpdate,
     mercado_id: int = Depends(obter_mercado_atual)
 ):
-
     conn = get_conexao()
     cursor = conn.cursor()
 
@@ -111,7 +115,9 @@ def atualizar_produto(
             UPDATE Produtos
             SET nome = %s,
                 preco = %s,
-                codigo_de_barras = %s
+                codigo_de_barras = %s,
+                quantidade_estoque = %s,
+                estoque_minimo = %s
             WHERE id = %s
             AND mercado_id = %s
             RETURNING id, nome;
@@ -120,6 +126,8 @@ def atualizar_produto(
                 produto.nome,
                 produto.preco,
                 produto.codigo_de_barras,
+                produto.quantidade_estoque,
+                produto.estoque_minimo,
                 produto_id,
                 mercado_id
             )
@@ -150,7 +158,6 @@ def deletar_produto(
     produto_id: int,
     mercado_id: int = Depends(obter_mercado_atual)
 ):
-
     conn = get_conexao()
     cursor = conn.cursor()
 

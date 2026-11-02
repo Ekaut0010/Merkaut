@@ -1,9 +1,13 @@
+
 from fastapi.testclient import TestClient
 from uuid import uuid4
-from main import app
 from datetime import datetime, timedelta, timezone
+
 import jwt
+
+from main import app
 from app.config import SECRET_KEY, ALGORITHM
+
 
 client = TestClient(app)
 
@@ -17,6 +21,7 @@ def test_raiz():
 
     assert dados["mensagem"] == "O servidor do Merkaut está online!"
     assert dados["versao"] == "1.0.0"
+
 
 def test_criar_mercado():
     email_teste = f"{uuid4().hex}@merkaut.com"
@@ -38,11 +43,11 @@ def test_criar_mercado():
     assert dados["email"] == email_teste
     assert "senha" not in dados
 
+
 def test_login():
     email_teste = f"{uuid4().hex}@merkaut.com"
     senha_teste = "SenhaTeste123"
 
-    # Primeiro, cadastra o mercado
     cadastro = client.post(
         "/mercados/",
         json={
@@ -54,7 +59,6 @@ def test_login():
 
     assert cadastro.status_code == 201
 
-    # Depois, tenta fazer login
     response = client.post(
         "/login",
         data={
@@ -70,8 +74,8 @@ def test_login():
     assert "access_token" in dados
     assert dados["token_type"] == "bearer"
 
+
 def test_isolamento_entre_mercados():
-    # Criando dois mercados
     email_a = f"{uuid4().hex}@merkaut.com"
     email_b = f"{uuid4().hex}@merkaut.com"
     senha = "SenhaTeste123"
@@ -90,33 +94,32 @@ def test_isolamento_entre_mercados():
         )
         assert response.status_code == 201
 
-    # Fazendo login no Mercado A
     login_a = client.post(
         "/login",
         data={"username": email_a, "password": senha}
     )
     token_a = login_a.json()["access_token"]
 
-    # Mercado A cadastra um produto
     produto = client.post(
         "/produtos/",
         headers={"Authorization": f"Bearer {token_a}"},
         json={
             "nome": "Arroz Teste",
             "preco": 25.90,
-            "codigo_de_barras": "123456789"
+            "codigo_de_barras": "123456789",
+            "quantidade_estoque": 20,
+            "estoque_minimo": 5
         }
     )
+
     assert produto.status_code == 201
 
-    # Fazendo login no Mercado B
     login_b = client.post(
         "/login",
         data={"username": email_b, "password": senha}
     )
     token_b = login_b.json()["access_token"]
 
-    # Mercado B tenta visualizar os produtos
     produtos_b = client.get(
         "/produtos/",
         headers={"Authorization": f"Bearer {token_b}"}
@@ -125,12 +128,12 @@ def test_isolamento_entre_mercados():
     assert produtos_b.status_code == 200
     assert produtos_b.json() == []
 
+
 def test_bloquear_alteracao_e_exclusao_de_outro_mercado():
     senha = "SenhaTeste123"
     email_a = f"{uuid4().hex}@merkaut.com"
     email_b = f"{uuid4().hex}@merkaut.com"
 
-    # Criar os dois mercados
     for email, nome in [
         (email_a, "Mercado A"),
         (email_b, "Mercado B")
@@ -145,58 +148,60 @@ def test_bloquear_alteracao_e_exclusao_de_outro_mercado():
         )
         assert response.status_code == 201
 
-    # Login do Mercado A
     login_a = client.post(
         "/login",
         data={"username": email_a, "password": senha}
     )
     token_a = login_a.json()["access_token"]
 
-    # Login do Mercado B
     login_b = client.post(
         "/login",
         data={"username": email_b, "password": senha}
     )
     token_b = login_b.json()["access_token"]
 
-    # Mercado A cadastra um produto
     produto = client.post(
         "/produtos/",
         headers={"Authorization": f"Bearer {token_a}"},
         json={
             "nome": "Produto Privado",
             "preco": 15.90,
-            "codigo_de_barras": "987654321"
+            "codigo_de_barras": "987654321",
+            "quantidade_estoque": 20,
+            "estoque_minimo": 5
         }
     )
+
     assert produto.status_code == 201
 
     produto_id = produto.json()["id"]
 
-    # Mercado B tenta alterar o produto de A
     alteracao = client.put(
         f"/produtos/{produto_id}",
         headers={"Authorization": f"Bearer {token_b}"},
         json={
             "nome": "Produto Invadido",
             "preco": 1.00,
-            "codigo_de_barras": "111111111"
+            "codigo_de_barras": "111111111",
+            "quantidade_estoque": 20,
+            "estoque_minimo": 5
         }
     )
+
     assert alteracao.status_code == 404
 
-    # Mercado B tenta excluir o produto de A
     exclusao = client.delete(
         f"/produtos/{produto_id}",
         headers={"Authorization": f"Bearer {token_b}"}
     )
+
     assert exclusao.status_code == 404
+
 
 def test_atualizar_e_excluir_produto_proprio():
     email = f"{uuid4().hex}@merkaut.com"
     senha = "SenhaTeste123"
 
-    # Criar mercado
     cadastro = client.post(
         "/mercados/",
         json={
@@ -208,7 +213,6 @@ def test_atualizar_e_excluir_produto_proprio():
 
     assert cadastro.status_code == 201
 
-    # Fazer login
     login = client.post(
         "/login",
         data={
@@ -220,14 +224,15 @@ def test_atualizar_e_excluir_produto_proprio():
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Cadastrar produto
     produto = client.post(
         "/produtos/",
         headers=headers,
         json={
             "nome": "Arroz",
             "preco": 25.90,
-            "codigo_de_barras": "123456789"
+            "codigo_de_barras": "123456789",
+            "quantidade_estoque": 20,
+            "estoque_minimo": 5
         }
     )
 
@@ -235,32 +240,35 @@ def test_atualizar_e_excluir_produto_proprio():
 
     produto_id = produto.json()["id"]
 
-    # Atualizar produto
     atualizacao = client.put(
         f"/produtos/{produto_id}",
         headers=headers,
         json={
             "nome": "Arroz Integral",
             "preco": 29.90,
-            "codigo_de_barras": "123456789"
+            "codigo_de_barras": "123456789",
+            "quantidade_estoque": 30,
+            "estoque_minimo": 8
         }
     )
 
     assert atualizacao.status_code == 200
 
-    # Confirmar atualização
     consulta = client.get(
         "/produtos/",
         headers=headers
     )
 
     assert consulta.status_code == 200
+
     assert any(
-        p["id"] == produto_id and p["nome"] == "Arroz Integral"
+        p["id"] == produto_id
+        and p["nome"] == "Arroz Integral"
+        and p["quantidade_estoque"] == 30
+        and p["estoque_minimo"] == 8
         for p in consulta.json()
     )
 
-    # Excluir produto
     exclusao = client.delete(
         f"/produtos/{produto_id}",
         headers=headers
@@ -268,23 +276,25 @@ def test_atualizar_e_excluir_produto_proprio():
 
     assert exclusao.status_code == 200
 
+
 def test_bloquear_acesso_sem_token():
-    # Tentar listar produtos sem autenticação
     response = client.get("/produtos/")
 
     assert response.status_code == 401
 
-    # Tentar cadastrar produto sem autenticação
     response = client.post(
         "/produtos/",
         json={
             "nome": "Produto Não Autorizado",
             "preco": 10.00,
-            "codigo_de_barras": "111222333"
+            "codigo_de_barras": "111222333",
+            "quantidade_estoque": 20,
+            "estoque_minimo": 5
         }
     )
 
     assert response.status_code == 401
+
 
 def test_bloquear_token_invalido():
     headers = {
@@ -297,9 +307,6 @@ def test_bloquear_token_invalido():
     )
 
     assert response.status_code == 401
-    from datetime import datetime, timedelta, timezone
-import jwt
-from app.config import SECRET_KEY, ALGORITHM
 
 
 def test_bloquear_token_expirado():
@@ -324,6 +331,7 @@ def test_bloquear_token_expirado():
 
     assert response.status_code == 401
 
+
 def test_bloquear_produto_com_dados_invalidos():
     email = f"{uuid4().hex}@merkaut.com"
     senha = "SenhaTeste123"
@@ -336,12 +344,14 @@ def test_bloquear_produto_com_dados_invalidos():
             "senha": senha
         }
     )
+
     assert cadastro.status_code == 201
 
     login = client.post(
         "/login",
         data={"username": email, "password": senha}
     )
+
     token = login.json()["access_token"]
 
     response = client.post(
@@ -350,7 +360,9 @@ def test_bloquear_produto_com_dados_invalidos():
         json={
             "nome": "A",
             "preco": -10,
-            "codigo_de_barras": ""
+            "codigo_de_barras": "",
+            "quantidade_estoque": 20,
+            "estoque_minimo": 5
         }
     )
 
