@@ -24,7 +24,8 @@ def listar_produtos(
         cursor.execute(
             """
             SELECT id, nome, preco, codigo_de_barras,
-                   quantidade_estoque, estoque_minimo
+            quantidade_estoque, estoque_minimo, categoria,
+            unidade_medida
             FROM Produtos
             WHERE mercado_id = %s;
             """,
@@ -40,7 +41,9 @@ def listar_produtos(
                 "preco": p[2],
                 "codigo_de_barras": p[3],
                 "quantidade_estoque": p[4],
-                "estoque_minimo": p[5]
+                "estoque_minimo": p[5],
+                "categoria": p[6],
+                "unidade_medida": p[7]
             }
             for p in produtos
         ]
@@ -64,8 +67,8 @@ def criar_produto(
             """
             INSERT INTO Produtos
             (nome, preco, codigo_de_barras, mercado_id,
-             quantidade_estoque, estoque_minimo)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            quantidade_estoque, estoque_minimo, categoria, unidade_medida)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, nome;
             """,
             (
@@ -74,7 +77,9 @@ def criar_produto(
                 produto.codigo_de_barras,
                 mercado_id,
                 produto.quantidade_estoque,
-                produto.estoque_minimo
+                produto.estoque_minimo,
+                produto.categoria,
+                produto.unidade_medida
             )
         )
 
@@ -117,7 +122,9 @@ def atualizar_produto(
                 preco = %s,
                 codigo_de_barras = %s,
                 quantidade_estoque = %s,
-                estoque_minimo = %s
+                estoque_minimo = %s,
+                categoria = %s,
+                unidade_medida = %s
             WHERE id = %s
             AND mercado_id = %s
             RETURNING id, nome;
@@ -128,6 +135,8 @@ def atualizar_produto(
                 produto.codigo_de_barras,
                 produto.quantidade_estoque,
                 produto.estoque_minimo,
+                produto.categoria,
+                produto.unidade_medida,
                 produto_id,
                 mercado_id
             )
@@ -147,11 +156,19 @@ def atualizar_produto(
             "mensagem": f"Produto '{atualizado[1]}' atualizado!"
         }
 
+    except HTTPException:
+        raise
+
+    except Exception:
+        conn.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Erro ao atualizar produto."
+        )
+
     finally:
         cursor.close()
         conn.close()
-
-
 # EXCLUIR PRODUTO
 @router.delete("/{produto_id}")
 def deletar_produto(
@@ -185,6 +202,16 @@ def deletar_produto(
         return {
             "mensagem": "Produto excluído com sucesso!"
         }
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        conn.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Erro ao excluir produto."
+        )
 
     finally:
         cursor.close()
